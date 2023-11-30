@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"grpc-playground/pb"
 	"io"
 	"log"
@@ -13,7 +16,7 @@ import (
 
 func main() {
 	// server 接続
-	conn, err := grpc.Dial("localhost:5001", grpc.WithInsecure()) // 第二引数は通信が暗号化されずに非推奨。SSLにするべきだが学習なのでよし
+	conn, err := grpc.Dial("localhost:5003", grpc.WithInsecure()) // 第二引数は通信が暗号化されずに非推奨。SSLにするべきだが学習なのでよし
 	if err != nil {
 		log.Fatalf("Fataled to connect: %v", err)
 	}
@@ -22,15 +25,21 @@ func main() {
 	client := pb.NewFileServiceClient(conn) //FileServiceClientを取得できる
 	//callListFiles(client)
 
-	//callDownload(client)
+	callDownload(client)
 
 	//callUpload(client)
 
-	callUploadAndNotifyProgress(client)
+	//callUploadAndNotifyProgress(client)
 }
 
 func callListFiles(client pb.FileServiceClient) {
-	res, err := client.ListFiles(context.Background(), &pb.ListFilesRequest{})
+	// gRPCリクエストのためのメタデータを新規に作成
+	md := metadata.New(map[string]string{"authorization": "Bearer test-token"})
+	// 新しいgRPCコンテキストを作成。このコンテキストにはメタデータ（md）が添付され、これにより認証情報がリクエストに含まれる
+	ctx := metadata.NewOutgoingContext(context.Background(), md)
+	//　gRPCクライアントがサーバーに対してListFilesというメソッドを呼び出している
+	res, err := client.ListFiles(ctx, &pb.ListFilesRequest{})
+	//res, err := client.ListFiles(context.Background(), &pb.ListFilesRequest{})
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -39,8 +48,11 @@ func callListFiles(client pb.FileServiceClient) {
 }
 
 func callDownload(client pb.FileServiceClient) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second) // X秒後timeout deadline
+	defer cancel()
+
 	req := &pb.DownloadRequest{Filename: "name.txt"}
-	stream, err := client.Download(context.Background(), req)
+	stream, err := client.Download(ctx, req)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -51,7 +63,18 @@ func callDownload(client pb.FileServiceClient) {
 			break
 		}
 		if err != nil {
-			log.Fatalln(err)
+			resErr, ok := status.FromError(err)
+			if ok {
+				if resErr.Code() == codes.NotFound {
+					log.Fatalf("Error code: %v, ErrorMessage: %v", resErr.Code(), resErr.Message())
+				} else if resErr.Code() == codes.DeadlineExceeded {
+					log.Fatalln("deadline Exceeded")
+				} else {
+					log.Fatalln("unknown grpc error")
+				}
+			} else {
+				log.Fatalln(err)
+			}
 		}
 		log.Printf("Response from Download(bytes: %v", res.GetData())
 		log.Printf("Response from Download(bytes: %v", string(res.GetData()))

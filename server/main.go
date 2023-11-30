@@ -2,8 +2,18 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"fmt"
+	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
+	grpc_auth "github.com/grpc-ecosystem/go-grpc-middleware/auth"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"grpc-playground/pb"
 	"io"
+	"log"
+	"net"
+	"os"
 	"time"
 )
 
@@ -12,14 +22,16 @@ Unary server の実装
 req/resは1:1
 */
 
-import (
-	"context"
-	"fmt"
-	"google.golang.org/grpc"
-	"log"
-	"net"
-	"os"
-)
+//import (
+//
+//	"fmt"
+//	"google.golang.org/grpc"
+//	grpc_midllerware "github.com/grpc-ecosystem/go-grpc-middleware"
+//	//grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware/auth"
+//	"log"
+//	"net"
+//	"os"
+//)
 
 type server struct {
 	// FileServiceServerインターフェースを満したデフォルト実装. オーバーライドして具体的な実装をする必要がある。
@@ -57,6 +69,11 @@ func (*server) Download(req *pb.DownloadRequest, stream pb.FileService_DownloadS
 
 	filename := req.GetFilename()
 	path := "/Users/s23300/learn/go-grpc-tutorial/storage/" + filename
+
+	// ファイルの存在チェック
+	//if _, err := os.Stat(path); os.IsNotExist(err) {
+	//	return status.Error(codes.NotFound, "file was not found")
+	//}
 
 	file, err := os.Open(path)
 	if err != nil {
@@ -148,15 +165,36 @@ func myLogging() grpc.UnaryServerInterceptor {
 	}
 }
 
+func authorize(ctx context.Context) (context.Context, error) {
+	// クライアントから送信されたgRPCリクエストのコンテキスト（ctx）から「Bearer」トークンを抽出
+	token, err := grpc_auth.AuthFromMD(ctx, "Bearer")
+	if err != nil {
+		return nil, err
+	}
+
+	// 認証
+	if token != "test-token!!!" {
+		//return nil, errors.New("bad token")
+		return nil, status.Error(codes.Unauthenticated, "token is invalid")
+	}
+
+	return ctx, nil
+}
+
 func main() {
 	// gRPCサーバーのインスタンス作成
-	s := grpc.NewServer(grpc.UnaryInterceptor(myLogging())) // interceptor追加
+	s := grpc.NewServer(grpc.UnaryInterceptor(grpc_middleware.ChainUnaryServer(
+		myLogging(),
+		grpc_auth.UnaryServerInterceptor(authorize),
+	),
+	),
+	) // interceptor追加
 
 	// gRPCサーバーにサービス登録
 	pb.RegisterFileServiceServer(s, &server{})
 
 	// server設定
-	lis, err := net.Listen("tcp", "localhost:5001")
+	lis, err := net.Listen("tcp", "localhost:5003")
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
