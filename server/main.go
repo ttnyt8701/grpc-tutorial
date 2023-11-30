@@ -8,6 +8,7 @@ import (
 	grpc_auth "github.com/grpc-ecosystem/go-grpc-middleware/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 	"grpc-playground/pb"
 	"io"
@@ -182,12 +183,22 @@ func authorize(ctx context.Context) (context.Context, error) {
 }
 
 func main() {
+	// 証明書
+	creds, err := credentials.NewServerTLSFromFile(
+		"ssl/localhost.pem",
+		"ssl/localhost-key.pem")
+	if err != nil {
+		log.Fatalln(err)
+	}
+
 	// gRPCサーバーのインスタンス作成
-	s := grpc.NewServer(grpc.UnaryInterceptor(grpc_middleware.ChainUnaryServer(
-		myLogging(),
-		grpc_auth.UnaryServerInterceptor(authorize),
-	),
-	),
+	s := grpc.NewServer(
+		grpc.Creds(creds),
+		grpc.UnaryInterceptor(grpc_middleware.ChainUnaryServer(
+			myLogging(),
+			grpc_auth.UnaryServerInterceptor(authorize),
+		),
+		),
 	) // interceptor追加
 
 	// gRPCサーバーにサービス登録

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"grpc-playground/pb"
@@ -15,8 +16,11 @@ import (
 )
 
 func main() {
+	// 証明書 ssl
+	certFile := "/Users/s23300/Library/Application Support/mkcert/rootCA.pem"
+	creds, err := credentials.NewClientTLSFromFile(certFile, "")
 	// server 接続
-	conn, err := grpc.Dial("localhost:5003", grpc.WithInsecure()) // 第二引数は通信が暗号化されずに非推奨。SSLにするべきだが学習なのでよし
+	conn, err := grpc.Dial("localhost:5003", grpc.WithTransportCredentials(creds)) // 第二引数は通信が暗号化されずに非推奨。SSLにするべきだが学習なのでよし
 	if err != nil {
 		log.Fatalf("Fataled to connect: %v", err)
 	}
@@ -48,7 +52,7 @@ func callListFiles(client pb.FileServiceClient) {
 }
 
 func callDownload(client pb.FileServiceClient) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second) // X秒後timeout deadline
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second) // X秒後timeout deadline
 	defer cancel()
 
 	req := &pb.DownloadRequest{Filename: "name.txt"}
